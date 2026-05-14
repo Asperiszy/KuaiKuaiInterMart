@@ -9,6 +9,7 @@ import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Cart from './pages/Cart'
 import OrderHistory from './pages/OrderHistory'
+import Profile from './pages/Profile'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/cart" element={<PrivateRoute><Cart /></PrivateRoute>} />
         <Route path="/orders" element={<PrivateRoute><OrderHistory /></PrivateRoute>} />
+        <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
       </Routes>
     </BrowserRouter>
   )
