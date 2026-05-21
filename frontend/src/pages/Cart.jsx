@@ -13,8 +13,24 @@ export default function Cart() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('cart') || '[]')
-    setCart(saved)
+    try {
+      // BUG FIX #4: safely parse cart, handle corrupted localStorage
+      const saved = JSON.parse(localStorage.getItem('cart') || '[]')
+      // BUG FIX #4: filter out items with invalid prices
+      const valid = saved.filter(item =>
+        item && item.id && item.name &&
+        !isNaN(parseFloat(item.price)) &&
+        item.quantity > 0
+      )
+      setCart(valid)
+      if (valid.length !== saved.length) {
+        localStorage.setItem('cart', JSON.stringify(valid))
+      }
+    } catch {
+      // BUG FIX: if localStorage is corrupted, reset it
+      localStorage.removeItem('cart')
+      setCart([])
+    }
   }, [])
 
   const updateQuantity = (id, newQty) => {
@@ -37,10 +53,17 @@ export default function Cart() {
     localStorage.removeItem('cart')
   }
 
-  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0)
+  // BUG FIX #4: safe total calculation — fallback to 0 if NaN
+  const cartTotal = cart.reduce((sum, item) => {
+    const price = parseFloat(item.price) || 0
+    const qty = parseInt(item.quantity) || 0
+    return sum + price * qty
+  }, 0)
+
+  const totalItems = cart.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0)
 
   const placeOrder = async () => {
+    // BUG FIX #20: redirect to login if not authenticated
     if (!user) { navigate('/login'); return }
     if (!address.trim()) { setStatus('⚠️ Please enter a shipping address.'); return }
     if (cart.length === 0) { setStatus('⚠️ Your cart is empty.'); return }
@@ -58,7 +81,16 @@ export default function Cart() {
       setStatus('✅ Order placed successfully! Redirecting…')
       setTimeout(() => navigate('/orders'), 2000)
     } catch (err) {
-      setStatus('❌ Something went wrong: ' + (err.response?.data?.detail || err.message))
+      if (err.response?.status === 401) {
+        setStatus('❌ You need to be logged in to place an order.')
+      } else if (err.response?.status === 400) {
+        const detail = err.response.data?.detail || JSON.stringify(err.response.data)
+        setStatus(`❌ Order failed: ${detail}`)
+      } else if (!navigator.onLine) {
+        setStatus('❌ You appear to be offline.')
+      } else {
+        setStatus('❌ Something went wrong. Make sure the backend is running.')
+      }
     } finally {
       setLoading(false)
     }
@@ -73,9 +105,7 @@ export default function Cart() {
         <Link to="/products" style={{
           display: 'inline-block', marginTop: '16px', padding: '12px 32px',
           background: '#1a2b4a', color: '#fff', borderRadius: '8px', textDecoration: 'none'
-        }}>
-          Browse Products
-        </Link>
+        }}>Browse Products</Link>
       </main>
     )
   }
@@ -83,13 +113,14 @@ export default function Cart() {
   return (
     <main style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
       <h1 style={{ color: '#1a2b4a', marginBottom: '8px' }}>🛒 Your Cart</h1>
-      <p style={{ color: '#888', marginBottom: '24px' }}>{totalItems} item{totalItems !== 1 ? 's' : ''}</p>
+      <p style={{ color: '#888', marginBottom: '24px' }}>
+        {totalItems} item{totalItems !== 1 ? 's' : ''}
+      </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px', alignItems: 'start' }}>
 
-        {/* ── Left: Product list ── */}
+        {/* Product table */}
         <div>
-          {/* Table header */}
           <div style={{
             display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto',
             gap: '8px', padding: '10px 16px',
@@ -103,53 +134,42 @@ export default function Cart() {
             <span></span>
           </div>
 
-          {/* Cart items */}
-          {cart.map((item, index) => (
-            <div key={item.id} style={{
-              display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto',
-              gap: '8px', padding: '14px 16px', alignItems: 'center',
-              background: index % 2 === 0 ? '#fff' : '#f9f9f9',
-              borderLeft: '1px solid #eee', borderRight: '1px solid #eee',
-              borderBottom: '1px solid #eee',
-            }}>
-              {/* Product name */}
-              <span style={{ fontWeight: '500', fontSize: '.9rem', color: '#333',
-                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {item.name}
-              </span>
-
-              {/* Unit price */}
-              <span style={{ textAlign: 'center', color: '#555', fontSize: '.95rem' }}>
-                ${item.price.toFixed(2)}
-              </span>
-
-              {/* Quantity controls */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                <button onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                  style={qBtn}>−</button>
-                <span style={{ minWidth: '20px', textAlign: 'center', fontWeight: 'bold' }}>
-                  {item.quantity}
+          {cart.map((item, index) => {
+            const price = parseFloat(item.price) || 0
+            const qty = parseInt(item.quantity) || 1
+            return (
+              <div key={item.id} style={{
+                display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto',
+                gap: '8px', padding: '14px 16px', alignItems: 'center',
+                background: index % 2 === 0 ? '#fff' : '#f9f9f9',
+                borderLeft: '1px solid #eee', borderRight: '1px solid #eee',
+                borderBottom: '1px solid #eee',
+              }}>
+                <span style={{ fontWeight: '500', fontSize: '.9rem', color: '#333',
+                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {/* BUG FIX #7: fallback if name is missing */}
+                  {item.name || 'Unknown Product'}
                 </span>
-                <button onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                  style={qBtn}>+</button>
+                <span style={{ textAlign: 'center', color: '#555', fontSize: '.95rem' }}>
+                  ${price.toFixed(2)}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <button onClick={() => updateQuantity(item.id, qty - 1)} style={qBtn}>−</button>
+                  <span style={{ minWidth: '20px', textAlign: 'center', fontWeight: 'bold' }}>{qty}</span>
+                  <button onClick={() => updateQuantity(item.id, qty + 1)} style={qBtn}>+</button>
+                </div>
+                <span style={{ textAlign: 'center', fontWeight: 'bold', color: '#1a2b4a' }}>
+                  ${(price * qty).toFixed(2)}
+                </span>
+                <button onClick={() => removeItem(item.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer',
+                           color: '#e53935', fontSize: '1.1rem', padding: '4px' }}>
+                  ✕
+                </button>
               </div>
+            )
+          })}
 
-              {/* Subtotal */}
-              <span style={{ textAlign: 'center', fontWeight: 'bold', color: '#1a2b4a' }}>
-                ${(item.price * item.quantity).toFixed(2)}
-              </span>
-
-              {/* Remove */}
-              <button onClick={() => removeItem(item.id)}
-                title="Remove item"
-                style={{ background: 'none', border: 'none', cursor: 'pointer',
-                         color: '#e53935', fontSize: '1.1rem', padding: '4px' }}>
-                ✕
-              </button>
-            </div>
-          ))}
-
-          {/* Clear cart */}
           {cart.length > 0 && (
             <div style={{ padding: '12px 16px', borderLeft: '1px solid #eee',
                           borderRight: '1px solid #eee', borderBottom: '1px solid #eee',
@@ -163,30 +183,30 @@ export default function Cart() {
           )}
         </div>
 
-        {/* ── Right: Order summary ── */}
+        {/* Order summary */}
         <div style={{ border: '1px solid #eee', borderRadius: '10px', overflow: 'hidden' }}>
-          {/* Summary header */}
           <div style={{ background: '#1a2b4a', color: '#fff', padding: '14px 20px',
                         fontWeight: 'bold', fontSize: '1rem' }}>
             Order Summary
           </div>
-
           <div style={{ padding: '20px' }}>
-            {/* Price breakdown */}
-            {cart.map(item => (
-              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between',
-                                          marginBottom: '8px', fontSize: '.9rem', color: '#555' }}>
-                <span style={{ maxWidth: '180px', overflow: 'hidden',
-                               textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {item.name} × {item.quantity}
-                </span>
-                <span>${(item.price * item.quantity).toFixed(2)}</span>
-              </div>
-            ))}
+            {cart.map(item => {
+              const price = parseFloat(item.price) || 0
+              const qty = parseInt(item.quantity) || 1
+              return (
+                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between',
+                                            marginBottom: '8px', fontSize: '.9rem', color: '#555' }}>
+                  <span style={{ maxWidth: '180px', overflow: 'hidden',
+                                 textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.name || 'Unknown'} × {qty}
+                  </span>
+                  <span>${(price * qty).toFixed(2)}</span>
+                </div>
+              )
+            })}
 
             <hr style={{ margin: '12px 0', borderColor: '#eee' }} />
 
-            {/* Total */}
             <div style={{ display: 'flex', justifyContent: 'space-between',
                           fontWeight: 'bold', fontSize: '1.1rem', color: '#1a2b4a',
                           marginBottom: '20px' }}>
@@ -194,9 +214,7 @@ export default function Cart() {
               <span>${cartTotal.toFixed(2)} USD</span>
             </div>
 
-            {/* Shipping address */}
-            <label style={{ display: 'block', fontWeight: 'bold',
-                            marginBottom: '6px', fontSize: '.9rem' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '.9rem' }}>
               Shipping Address
             </label>
             <textarea
@@ -208,9 +226,7 @@ export default function Cart() {
                        boxSizing: 'border-box', resize: 'vertical' }}
             />
 
-            {/* Payment method */}
-            <label style={{ display: 'block', fontWeight: 'bold',
-                            margin: '12px 0 6px', fontSize: '.9rem' }}>
+            <label style={{ display: 'block', fontWeight: 'bold', margin: '12px 0 6px', fontSize: '.9rem' }}>
               Payment Method
             </label>
             <select value={method} onChange={e => setMethod(e.target.value)}
@@ -223,16 +239,27 @@ export default function Cart() {
               <option value="bank_transfer">🏦 Bank Transfer</option>
             </select>
 
-            {/* Place order button */}
-            <button onClick={placeOrder} disabled={loading}
-              style={{ width: '100%', marginTop: '16px', padding: '14px',
-                       background: loading ? '#aaa' : '#1a2b4a', color: '#fff',
-                       border: 'none', borderRadius: '8px', cursor: loading ? 'not-allowed' : 'pointer',
-                       fontWeight: 'bold', fontSize: '1rem' }}>
+            <button onClick={placeOrder} disabled={loading} style={{
+              width: '100%', marginTop: '16px', padding: '14px',
+              background: loading ? '#aaa' : '#1a2b4a', color: '#fff',
+              border: 'none', borderRadius: '8px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontWeight: 'bold', fontSize: '1rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
+            }}>
+              {loading && (
+                <span style={{
+                  width: '16px', height: '16px',
+                  border: '2px solid rgba(255,255,255,0.4)',
+                  borderTop: '2px solid #fff',
+                  borderRadius: '50%', display: 'inline-block',
+                  animation: 'spin 0.8s linear infinite'
+                }} />
+              )}
               {loading ? 'Processing…' : `Place Order — $${cartTotal.toFixed(2)}`}
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </button>
 
-            {/* Status message */}
             {status && (
               <p style={{ marginTop: '12px', textAlign: 'center', fontSize: '.9rem',
                           color: status.startsWith('❌') ? '#e53935'
@@ -241,7 +268,6 @@ export default function Cart() {
               </p>
             )}
 
-            {/* Continue shopping */}
             <Link to="/products" style={{ display: 'block', textAlign: 'center',
                                           marginTop: '12px', color: '#1a2b4a',
                                           fontSize: '.85rem', textDecoration: 'underline' }}>

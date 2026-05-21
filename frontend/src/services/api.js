@@ -18,11 +18,11 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config
-    if (error.response?.status === 401 && !original._retry) {
+    if (error.response?.status === 401 && !original._retry && !original.url?.includes('auth/token')) {
       original._retry = true
       try {
         const refresh = localStorage.getItem('refresh_token')
-        const { data } = await axios.post('/api/users/token/refresh/', { refresh })
+        const { data } = await axios.post('/api/auth/token/refresh/', { refresh })
         localStorage.setItem('access_token', data.access)
         original.headers.Authorization = `Bearer ${data.access}`
         return api(original)
@@ -39,7 +39,7 @@ api.interceptors.response.use(
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authApi = {
   login: (email, password) =>
-    api.post('/users/login/', { email, password }),
+    api.post('/auth/token/', { email, password }),
   register: (data) => api.post('/users/register/', data),
   getProfile: () => api.get('/users/profile/'),
   updateProfile: (data) => api.patch('/users/profile/', data),

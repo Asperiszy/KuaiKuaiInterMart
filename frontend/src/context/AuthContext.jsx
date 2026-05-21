@@ -23,12 +23,20 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = async (email, password) => {
-    const { data } = await authApi.login(email, password)
-    localStorage.setItem('access_token', data.access)
-    localStorage.setItem('refresh_token', data.refresh)
-    const profile = await authApi.getProfile()
-    setUser(profile.data)
-    return profile.data
+    try {
+      const { data } = await authApi.login(email, password)
+      localStorage.setItem('access_token', data.access)
+      localStorage.setItem('refresh_token', data.refresh)
+      const profile = await authApi.getProfile()
+      setUser(profile.data)
+      return profile.data
+    } catch (err) {
+      // Clean up any partial tokens if login fails
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      // Re-throw so Login.jsx can catch it and show the error
+      throw err
+    }
   }
 
   const logout = () => {
