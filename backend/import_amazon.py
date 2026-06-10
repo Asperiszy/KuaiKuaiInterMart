@@ -111,6 +111,7 @@ def run():
                     'stock': 50,
                     'origin_country': country,
                     'is_active': True,
+                    'image_url': image_url,
                 }
             )
 

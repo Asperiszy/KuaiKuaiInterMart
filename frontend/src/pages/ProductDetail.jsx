@@ -59,8 +59,8 @@ export default function ProductDetail() {
     <main style={{ padding: '24px', maxWidth: '960px', margin: '0 auto' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
         <div>
-          {product.image
-            ? <img src={product.image} alt={product.name} style={{ width: '100%', borderRadius: '8px' }} />
+          {(product.image_url || product.image)
+            ? <img src={product.image_url || product.image} alt={product.name} style={{ width: '100%', borderRadius: '8px' }} />
             : <div style={{ background: '#f0f0f0', height: '300px', borderRadius: '8px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             color: '#aaa', fontSize: '3rem' }}>🛍️</div>}

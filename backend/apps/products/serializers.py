@@ -29,7 +29,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ['id', 'name', 'category', 'base_price_usd', 'image',
-                  'origin_country', 'stock', 'is_active']
+                  'image_url','origin_country', 'stock', 'is_active']
 
 
 class ProductDetailSerializer(serializers.ModelSerializer):
@@ -41,7 +41,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ['id', 'name', 'description', 'category', 'base_price_usd',
-                  'image', 'origin_country', 'stock', 'is_active',
+                  'image', 'image_url', 'origin_country', 'stock', 'is_active',
                   'regional_prices', 'reviews', 'avg_rating', 'created_at']
 
     def get_avg_rating(self, obj):

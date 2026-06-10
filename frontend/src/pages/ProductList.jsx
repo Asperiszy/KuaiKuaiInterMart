@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { productsApi } from '../services/api'
 import ErrorMessage from '../components/ErrorMessage'
 import { ProductCardSkeleton } from '../components/SkeletonCard'
@@ -7,7 +7,9 @@ import { ProductCardSkeleton } from '../components/SkeletonCard'
 const cache = {}
 
 export default function ProductList() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(true)
@@ -16,8 +18,18 @@ export default function ProductList() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [total, setTotal] = useState(0)
 
-  const fetchProducts = (searchTerm) => {
-    const cacheKey = `products_${searchTerm}`
+  // Category from URL (?category=4) so Home page links work
+  const selectedCategory = searchParams.get('category') || ''
+
+  // Load categories once
+  useEffect(() => {
+    productsApi.categories()
+      .then(({ data }) => setCategories(data.results ?? data))
+      .catch(() => {})
+  }, [])
+
+  const fetchProducts = (searchTerm, category) => {
+    const cacheKey = `products_${searchTerm}_${category}`
     if (cache[cacheKey]) {
       setProducts(cache[cacheKey].results)
       setNextPage(cache[cacheKey].next)
@@ -27,7 +39,10 @@ export default function ProductList() {
     }
     setLoading(true)
     setError(null)
-    productsApi.list({ search: searchTerm, page_size: 50 })
+    const params = { search: searchTerm, page_size: 50 }
+    if (category) params.category = category
+
+    productsApi.list(params)
       .then(({ data }) => {
         cache[cacheKey] = {
           results: data.results ?? data,
@@ -39,9 +54,7 @@ export default function ProductList() {
         setTotal(cache[cacheKey].count)
       })
       .catch((err) => {
-        if (err.response?.status === 404) {
-          setError('No products found.')
-        } else if (err.response?.status === 500) {
+        if (err.response?.status === 500) {
           setError('Server error. Please try again.')
         } else if (!navigator.onLine) {
           setError('You appear to be offline.')
@@ -52,12 +65,24 @@ export default function ProductList() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchProducts(search) }, [search])
+  useEffect(() => {
+    fetchProducts(search, selectedCategory)
+  }, [search, selectedCategory])
+
+  const selectCategory = (categoryId) => {
+    if (categoryId) {
+      setSearchParams({ category: categoryId })
+    } else {
+      setSearchParams({})
+    }
+  }
 
   const loadMore = () => {
     if (!nextPage) return
     setLoadingMore(true)
-    productsApi.list({ search, page_size: 50, page: new URL(nextPage).searchParams.get('page') })
+    const params = { search, page_size: 50, page: new URL(nextPage).searchParams.get('page') }
+    if (selectedCategory) params.category = selectedCategory
+    productsApi.list(params)
       .then(({ data }) => {
         setProducts(prev => [...prev, ...(data.results ?? data)])
         setNextPage(data.next ?? null)
@@ -71,16 +96,20 @@ export default function ProductList() {
     setSearch(searchInput)
   }
 
+  const currentCategoryName = categories.find(c => String(c.id) === selectedCategory)?.name
+
   return (
     <div style={{ minHeight: '100vh', background: '#f5f6fa' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between',
-                      alignItems: 'center', marginBottom: '20px',
+                      alignItems: 'center', marginBottom: '16px',
                       flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h1 style={{ margin: 0, color: '#1a2b4a' }}>Products</h1>
+            <h1 style={{ margin: 0, color: '#1a2b4a' }}>
+              {currentCategoryName || 'All Products'}
+            </h1>
             {!loading && !error && (
               <p style={{ margin: '4px 0 0', color: '#888', fontSize: '.9rem' }}>
                 Showing {products.length} of {total} products
@@ -107,8 +136,37 @@ export default function ProductList() {
           </form>
         </div>
 
+        {/* ── Category filter bar ── */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>
+          <button onClick={() => selectCategory('')}
+            style={{
+              padding: '8px 18px', borderRadius: '20px', cursor: 'pointer',
+              fontSize: '.85rem', fontWeight: '500',
+              border: !selectedCategory ? 'none' : '1px solid #ddd',
+              background: !selectedCategory ? '#1a2b4a' : '#fff',
+              color: !selectedCategory ? '#fff' : '#555',
+            }}>
+            All
+          </button>
+          {categories.map((cat) => {
+            const active = String(cat.id) === selectedCategory
+            return (
+              <button key={cat.id} onClick={() => selectCategory(cat.id)}
+                style={{
+                  padding: '8px 18px', borderRadius: '20px', cursor: 'pointer',
+                  fontSize: '.85rem', fontWeight: '500',
+                  border: active ? 'none' : '1px solid #ddd',
+                  background: active ? '#1a2b4a' : '#fff',
+                  color: active ? '#fff' : '#555',
+                }}>
+                {cat.name}
+              </button>
+            )
+          })}
+        </div>
+
         {/* Error */}
-        {error && !loading && <ErrorMessage message={error} onRetry={() => fetchProducts(search)} />}
+        {error && !loading && <ErrorMessage message={error} onRetry={() => fetchProducts(search, selectedCategory)} />}
 
         {/* Skeleton loading */}
         {loading && (
@@ -121,7 +179,7 @@ export default function ProductList() {
         {!loading && !error && products.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>
             <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🔍</div>
-            No products found for "{search}"
+            No products found{search ? ` for "${search}"` : ''}{currentCategoryName ? ` in ${currentCategoryName}` : ''}
           </div>
         )}
 
@@ -138,9 +196,15 @@ export default function ProductList() {
                 }}
                   onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.1)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
                   onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'translateY(0)' }}>
-                  <div style={{ background: '#f0f4ff', borderRadius: '6px', height: '120px',
-                                marginBottom: '12px', display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', fontSize: '2rem' }}>🛍️</div>
+                  {p.image_url ? (
+                    <img src={p.image_url} alt={p.name}
+                      style={{ width: '100%', height: '120px', objectFit: 'contain',
+                               borderRadius: '6px', marginBottom: '12px', background: '#fff' }} />
+                  ) : (
+                    <div style={{ background: '#f0f4ff', borderRadius: '6px', height: '120px',
+                                  marginBottom: '12px', display: 'flex', alignItems: 'center',
+                                  justifyContent: 'center', fontSize: '2rem' }}>🛍️</div>
+                  )}
                   <div>
                     <p style={{ margin: '0 0 6px', fontWeight: '600', fontSize: '.9rem', color: '#1a2b4a',
                                 lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2,
@@ -162,10 +226,8 @@ export default function ProductList() {
             <button onClick={loadMore} disabled={loadingMore} style={{
               padding: '12px 40px', background: '#1a2b4a', color: '#fff',
               border: 'none', borderRadius: '8px', cursor: loadingMore ? 'not-allowed' : 'pointer',
-              fontSize: '1rem', opacity: loadingMore ? 0.7 : 1,
-              display: 'inline-flex', alignItems: 'center', gap: '10px'
+              fontSize: '1rem', opacity: loadingMore ? 0.7 : 1
             }}>
-              {loadingMore && <Spinner />}
               {loadingMore ? 'Loading more…' : `Load More (${total - products.length} remaining)`}
             </button>
           </div>
@@ -173,20 +235,5 @@ export default function ProductList() {
         <div style={{ height: '40px' }} />
       </div>
     </div>
-  )
-}
-
-function Spinner() {
-  return (
-    <>
-      <span style={{
-        width: '16px', height: '16px',
-        border: '2px solid rgba(255,255,255,0.4)',
-        borderTop: '2px solid #fff',
-        borderRadius: '50%', display: 'inline-block',
-        animation: 'spin 0.8s linear infinite',
-      }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </>
   )
 }
